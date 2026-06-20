@@ -66,6 +66,7 @@ apuntando al contenedor viejo → 502 Bad Gateway).
 | `LLM_PROMPT` | *(vacío)* | Prompt personalizado para la extracción (opcional). |
 | `ALLOWED_IPS` | *(vacío)* | IPs/CIDR (separadas por coma) que pueden acceder. Vacío = abierto a todos. Ej.: `181.58.39.244`. |
 | `XFF_TRUSTED_HOPS` | `1` | Nº de proxies de confianza delante. `1` = solo Traefik. `2` = también detrás de Cloudflare/CDN. |
+| `CORS_ALLOWED_ORIGINS` | *(vacío)* | Lista de orígenes permitidos para llamadas cross-origin, separada por comas. Ej.: `https://app.example.com,https://admin.example.com`. Vacío = producción mismo origen; en desarrollo local se reflejan orígenes loopback (`localhost`, `127.0.0.1`, `::1`). |
 | `ENABLE_API_DOCS` | `0` | `1` para exponer la documentación interactiva en `/api/docs` (desactivada por seguridad). |
 | `MARKITDOWN_PLUGINS` | `0` | `1` para habilitar otros plugins de terceros (el OCR se activa solo con `LLM_API_KEY`). |
 
@@ -83,6 +84,34 @@ apuntando al contenedor viejo → 502 Bad Gateway).
 > Para máxima robustez, el filtrado por IP también puede hacerse a nivel de
 > Traefik (middleware `ipAllowList`) desde Dokploy. El filtro de la app es
 > portable y suficiente para la mayoría de casos.
+
+- **CORS configurable por entorno:** define `CORS_ALLOWED_ORIGINS` con una lista
+  separada por comas para permitir frontends externos concretos. Cuando hay
+  allowlist explícita, la app responde con `Access-Control-Allow-Credentials: true`
+  y atiende `OPTIONS` preflight.
+- **Comportamiento por defecto:** si `CORS_ALLOWED_ORIGINS` está vacío, en
+  **producción** la app queda en mismo origen (no emite cabeceras CORS) y en
+  **desarrollo local** refleja automáticamente orígenes loopback como
+  `http://localhost:3000`.
+- **Importante:** CORS **no es un firewall**. Solo limita lo que el navegador
+  deja leer a JavaScript; no bloquea clientes como `curl`, scripts o accesos
+  directos al backend.
+
+### Cómo añadir dominios al CORS
+
+Ejemplos:
+
+```env
+CORS_ALLOWED_ORIGINS=https://app.example.com
+```
+
+```env
+CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
+```
+
+Si haces deploy detrás de Dokploy/Traefik, define esa variable en el servicio y
+vuelve a desplegar. No uses rutas (`/algo`) ni comodines; deben ser orígenes
+completos con esquema y, si aplica, puerto.
 
 ## OCR de PDFs con imágenes (LLM Vision)
 

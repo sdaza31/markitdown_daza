@@ -13,8 +13,9 @@ import os
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -31,6 +32,31 @@ MAX_UPLOAD_MB = int(os.environ.get("MARKITDOWN_MAX_UPLOAD_MB", "50"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# CORS allowlist for cross-origin browser access. Empty keeps production at
+# same-origin only, while localhost/127.0.0.1 origins are reflected in local
+# development for front-end dev servers.
+_CORS_ALLOWED_ORIGINS = tuple(
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+)
+_CORS_ALLOWED_ORIGIN_SET = set()
+for _origin in _CORS_ALLOWED_ORIGINS:
+    try:
+        parsed = urlsplit(_origin)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError
+        _port = f":{parsed.port}" if parsed.port else ""
+        _CORS_ALLOWED_ORIGIN_SET.add(f"{parsed.scheme}://{parsed.hostname}{_port}")
+    except ValueError:
+        print(
+            "[markitdown-web] Ignoring invalid CORS_ALLOWED_ORIGINS entry: "
+            f"{_origin!r}"
+        )
+
+_CORS_ALLOW_METHODS = "GET, POST, OPTIONS"
+_CORS_MAX_AGE_SECONDS = "600"
 
 # --- API docs exposure -----------------------------------------------------
 # The interactive API docs (Swagger) are DISABLED by default for security —
@@ -92,6 +118,81 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
+def _is_loopback_host(hostname: str | None) -> bool:
+    if not hostname:
+        return False
+    if hostname.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _normalize_origin(origin: str) -> str | None:
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or not parsed.hostname:
+        return None
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{parsed.scheme}://{parsed.hostname}{port}"
+
+
+def _is_dev_request(request: Request) -> bool:
+    host = request.headers.get("host", "").split(":", 1)[0].strip()
+    return _is_loopback_host(host)
+
+
+def _resolve_allowed_cors_origin(request: Request) -> str | None:
+    origin = request.headers.get("origin", "").strip()
+    if not origin:
+        return None
+
+    normalized_origin = _normalize_origin(origin)
+    if not normalized_origin:
+        return None
+
+    if _CORS_ALLOWED_ORIGIN_SET:
+        if normalized_origin in _CORS_ALLOWED_ORIGIN_SET:
+            return normalized_origin
+        return None
+
+    parsed = urlsplit(normalized_origin)
+    if _is_dev_request(request) and _is_loopback_host(parsed.hostname):
+        return normalized_origin
+
+    return None
+
+
+def _append_vary(response: Response, value: str) -> None:
+    current = response.headers.get("Vary")
+    if not current:
+        response.headers["Vary"] = value
+        return
+
+    values = {item.strip() for item in current.split(",") if item.strip()}
+    if value not in values:
+        values.add(value)
+        response.headers["Vary"] = ", ".join(sorted(values))
+
+
+def _apply_cors_headers(
+    response: Response, origin: str, request_headers: str | None = None
+) -> None:
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = _CORS_ALLOW_METHODS
+    response.headers["Access-Control-Max-Age"] = _CORS_MAX_AGE_SECONDS
+    if request_headers:
+        response.headers["Access-Control-Allow-Headers"] = request_headers
+        _append_vary(response, "Access-Control-Request-Headers")
+    else:
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    _append_vary(response, "Origin")
+
+
 @app.middleware("http")
 async def ip_allowlist(request: Request, call_next):
     if IP_FILTER_ENABLED and request.url.path not in _IP_FILTER_EXEMPT:
@@ -105,6 +206,33 @@ async def ip_allowlist(request: Request, call_next):
         if not allowed:
             return PlainTextResponse("403 Forbidden", status_code=403)
     return await call_next(request)
+
+
+@app.middleware("http")
+async def cors_policy(request: Request, call_next):
+    cors_origin = _resolve_allowed_cors_origin(request)
+    is_preflight = (
+        request.method == "OPTIONS"
+        and request.headers.get("origin")
+        and request.headers.get("access-control-request-method")
+    )
+
+    if is_preflight:
+        if not cors_origin:
+            return PlainTextResponse("CORS origin denied", status_code=400)
+        response = Response(status_code=204)
+        _apply_cors_headers(
+            response,
+            cors_origin,
+            request.headers.get("access-control-request-headers"),
+        )
+        _append_vary(response, "Access-Control-Request-Method")
+        return response
+
+    response = await call_next(request)
+    if cors_origin:
+        _apply_cors_headers(response, cors_origin)
+    return response
 
 
 # Per-request counter of LLM vision (OCR) calls. A ContextVar keeps it isolated
