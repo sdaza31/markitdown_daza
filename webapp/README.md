@@ -64,7 +64,25 @@ apuntando al contenedor viejo → 502 Bad Gateway).
 | `LLM_BASE_URL` | *(vacío)* | URL base del endpoint (compatible con OpenAI). Ej.: `https://openrouter.ai/api/v1`. Vacío = OpenAI oficial. |
 | `LLM_MODEL` | `gpt-4o` | Modelo con visión a usar. Ej.: `gpt-4o-mini`, `openai/gpt-4o`. |
 | `LLM_PROMPT` | *(vacío)* | Prompt personalizado para la extracción (opcional). |
+| `ALLOWED_IPS` | *(vacío)* | IPs/CIDR (separadas por coma) que pueden acceder. Vacío = abierto a todos. Ej.: `181.58.39.244`. |
+| `XFF_TRUSTED_HOPS` | `1` | Nº de proxies de confianza delante. `1` = solo Traefik. `2` = también detrás de Cloudflare/CDN. |
+| `ENABLE_API_DOCS` | `0` | `1` para exponer la documentación interactiva en `/api/docs` (desactivada por seguridad). |
 | `MARKITDOWN_PLUGINS` | `0` | `1` para habilitar otros plugins de terceros (el OCR se activa solo con `LLM_API_KEY`). |
+
+## Seguridad y control de acceso
+
+- **API docs ocultas:** la documentación interactiva (`/api/docs`, Swagger) está
+  **desactivada por defecto** porque expone la superficie de la API. Actívala
+  solo si la necesitas con `ENABLE_API_DOCS=1`.
+- **Allowlist de IP:** define `ALLOWED_IPS` para que solo ciertas IPs accedan.
+  La IP real se lee de `X-Forwarded-For` (lo pone Traefik/Dokploy); ajusta
+  `XFF_TRUSTED_HOPS` si hay un CDN delante. Tráfico no permitido recibe `403`.
+  El endpoint `/api/health` queda exento para que Docker/Dokploy puedan sondear
+  el contenedor.
+
+> Para máxima robustez, el filtrado por IP también puede hacerse a nivel de
+> Traefik (middleware `ipAllowList`) desde Dokploy. El filtro de la app es
+> portable y suficiente para la mayoría de casos.
 
 ## OCR de PDFs con imágenes (LLM Vision)
 

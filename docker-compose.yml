@@ -29,6 +29,14 @@ services:
       LLM_BASE_URL: "${LLM_BASE_URL:-}"        # e.g. https://openrouter.ai/api/v1
       LLM_MODEL: "${LLM_MODEL:-gpt-4o}"        # e.g. openai/gpt-4o, gpt-4o-mini
       LLM_PROMPT: "${LLM_PROMPT:-}"            # optional custom extraction prompt
+      # --- Access control --------------------------------------------------
+      # Comma-separated IPs / CIDRs allowed to reach the site. Empty = open.
+      # e.g. ALLOWED_IPS=181.58.39.244
+      ALLOWED_IPS: "${ALLOWED_IPS:-}"
+      # Trusted reverse-proxy hops (1 = Traefik only; 2 = behind Cloudflare too).
+      XFF_TRUSTED_HOPS: "${XFF_TRUSTED_HOPS:-1}"
+      # Expose interactive API docs at /api/docs (off by default for security).
+      ENABLE_API_DOCS: "${ENABLE_API_DOCS:-0}"
       # Legacy flag for other third-party plugins (OCR is auto-enabled above).
       MARKITDOWN_PLUGINS: 0
     # Expose the port to Traefik over the docker network. No host "ports:"
