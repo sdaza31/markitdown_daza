@@ -60,7 +60,24 @@ apuntando al contenedor viejo → 502 Bad Gateway).
 |----------|-------------|-------------|
 | `PORT` | `8000` | Puerto en el que escucha la app. |
 | `MARKITDOWN_MAX_UPLOAD_MB` | `50` | Tamaño máximo de subida en MB. |
-| `MARKITDOWN_PLUGINS` | `0` | `1` para habilitar plugins de terceros de MarkItDown. |
+| `LLM_API_KEY` | *(vacío)* | API key del LLM. **Si la defines, se activa el OCR** de imágenes en PDF/DOCX/PPTX/XLSX y de PDFs escaneados. Vacío = todo 100% local, sin OCR. |
+| `LLM_BASE_URL` | *(vacío)* | URL base del endpoint (compatible con OpenAI). Ej.: `https://openrouter.ai/api/v1`. Vacío = OpenAI oficial. |
+| `LLM_MODEL` | `gpt-4o` | Modelo con visión a usar. Ej.: `gpt-4o-mini`, `openai/gpt-4o`. |
+| `LLM_PROMPT` | *(vacío)* | Prompt personalizado para la extracción (opcional). |
+| `MARKITDOWN_PLUGINS` | `0` | `1` para habilitar otros plugins de terceros (el OCR se activa solo con `LLM_API_KEY`). |
+
+## OCR de PDFs con imágenes (LLM Vision)
+
+Por defecto, el conversor de PDF solo extrae **texto**: un PDF escaneado (solo
+imagen) saldría vacío. Para leer imágenes dentro de PDFs/DOCX/PPTX/XLSX y hacer
+OCR de páginas escaneadas, define `LLM_API_KEY` (y `LLM_BASE_URL`/`LLM_MODEL`
+según tu proveedor). Funciona con cualquier endpoint **compatible con OpenAI**
+(OpenAI, OpenRouter, Groq, Together, Anthropic vía compat, modelos locales…).
+
+Comprueba si está activo en `GET /api/health` → `{"status":"ok","ocr":true}`.
+
+> ⚠️ **Coste:** cada imagen / página escaneada genera una llamada de visión al
+> LLM, que tiene coste por tokens. Los PDFs con texto normal no llaman al LLM.
 
 ## Notas
 

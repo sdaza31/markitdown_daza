@@ -22,10 +22,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install the MarkItDown library (all optional converters) + web dependencies.
+# Install the MarkItDown library (all optional converters), the OCR plugin
+# (LLM-vision OCR for images inside PDF/DOCX/PPTX/XLSX), the OpenAI-compatible
+# client, and the web dependencies.
 COPY packages/markitdown /app/packages/markitdown
+COPY packages/markitdown-ocr /app/packages/markitdown-ocr
 COPY webapp/requirements.txt /app/webapp/requirements.txt
 RUN pip install --no-cache-dir /app/packages/markitdown[all] \
+    && pip install --no-cache-dir /app/packages/markitdown-ocr \
     && pip install --no-cache-dir -r /app/webapp/requirements.txt
 
 # Copy the web application.

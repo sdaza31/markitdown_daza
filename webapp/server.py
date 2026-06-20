@@ -31,10 +31,49 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="MarkItDown Web", docs_url="/api/docs", redoc_url=None)
 
-# A single MarkItDown instance is reused across requests. Plugins are disabled
-# by default so behaviour stays predictable; flip on with MARKITDOWN_PLUGINS=1.
-_enable_plugins = os.environ.get("MARKITDOWN_PLUGINS", "0") == "1"
-converter = MarkItDown(enable_plugins=_enable_plugins)
+
+def _build_converter() -> tuple[MarkItDown, bool]:
+    """Build the shared MarkItDown instance.
+
+    If an LLM API key is configured (LLM_API_KEY), wire up an OpenAI-compatible
+    client and enable the markitdown-ocr plugin so images inside PDFs/DOCX/PPTX/
+    XLSX — and fully scanned PDFs — get transcribed via the LLM. Works with any
+    OpenAI-compatible endpoint (OpenAI, Anthropic compat, OpenRouter, Groq,
+    Together, local models…) via LLM_BASE_URL.
+
+    Without a key it falls back to the standard, fully-local converters.
+
+    Returns (converter, ocr_enabled).
+    """
+    api_key = os.environ.get("LLM_API_KEY", "").strip()
+    base_url = os.environ.get("LLM_BASE_URL", "").strip() or None
+    model = os.environ.get("LLM_MODEL", "gpt-4o").strip()
+    prompt = os.environ.get("LLM_PROMPT", "").strip() or None
+
+    if api_key:
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            md = MarkItDown(
+                enable_plugins=True,
+                llm_client=client,
+                llm_model=model,
+                llm_prompt=prompt,
+            )
+            return md, True
+        except Exception as exc:  # noqa: BLE001 - degrade gracefully, never crash boot
+            print(f"[markitdown-web] OCR disabled: could not init LLM client: {exc}")
+
+    # No key (or init failed): standard local conversion. Honour the legacy
+    # MARKITDOWN_PLUGINS flag in case other plugins are installed.
+    enable_plugins = os.environ.get("MARKITDOWN_PLUGINS", "0") == "1"
+    return MarkItDown(enable_plugins=enable_plugins), False
+
+
+# A single MarkItDown instance is reused across requests.
+converter, OCR_ENABLED = _build_converter()
+print(f"[markitdown-web] LLM OCR {'ENABLED' if OCR_ENABLED else 'disabled'}")
 
 
 # --- API -------------------------------------------------------------------
@@ -43,7 +82,7 @@ converter = MarkItDown(enable_plugins=_enable_plugins)
 @app.get("/api/health")
 def health() -> dict:
     """Lightweight health check for Dokploy / load balancers."""
-    return {"status": "ok"}
+    return {"status": "ok", "ocr": OCR_ENABLED}
 
 
 @app.post("/api/convert")

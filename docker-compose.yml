@@ -21,7 +21,15 @@ services:
       PORT: 8000
       # Max upload size in MB.
       MARKITDOWN_MAX_UPLOAD_MB: 50
-      # Set to 1 to enable third-party MarkItDown plugins.
+      # --- LLM-vision OCR (optional) ---------------------------------------
+      # Set LLM_API_KEY to enable OCR of images inside PDF/DOCX/PPTX/XLSX and
+      # full-page OCR of scanned PDFs. Works with any OpenAI-compatible API.
+      # Leave LLM_API_KEY empty to keep everything 100% local (no OCR).
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"        # e.g. https://openrouter.ai/api/v1
+      LLM_MODEL: "${LLM_MODEL:-gpt-4o}"        # e.g. openai/gpt-4o, gpt-4o-mini
+      LLM_PROMPT: "${LLM_PROMPT:-}"            # optional custom extraction prompt
+      # Legacy flag for other third-party plugins (OCR is auto-enabled above).
       MARKITDOWN_PLUGINS: 0
     # Expose the port to Traefik over the docker network. No host "ports:"
     # mapping is needed in Dokploy — Traefik connects internally.
