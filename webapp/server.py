@@ -10,7 +10,9 @@ from __future__ import annotations
 import ipaddress
 import io
 import os
+from contextvars import ContextVar
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
@@ -105,6 +107,39 @@ async def ip_allowlist(request: Request, call_next):
     return await call_next(request)
 
 
+# Per-request counter of LLM vision (OCR) calls. A ContextVar keeps it isolated
+# between concurrent requests so we can honestly report whether AI was used.
+_ai_calls: ContextVar[int] = ContextVar("ai_calls", default=0)
+
+
+class _CountingClient:
+    """Thin proxy around an OpenAI-compatible client that counts vision calls.
+
+    Only `chat.completions.create` is intercepted (that is what the OCR plugin
+    invokes); every other attribute passes straight through.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+
+        class _Completions:
+            def __init__(self, comp: Any) -> None:
+                self._comp = comp
+
+            def create(self, *args: Any, **kwargs: Any) -> Any:
+                _ai_calls.set(_ai_calls.get() + 1)
+                return self._comp.create(*args, **kwargs)
+
+        class _Chat:
+            def __init__(self, chat: Any) -> None:
+                self.completions = _Completions(chat.completions)
+
+        self.chat = _Chat(inner.chat)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
 def _build_converter() -> tuple[MarkItDown, bool]:
     """Build the shared MarkItDown instance.
 
@@ -127,7 +162,7 @@ def _build_converter() -> tuple[MarkItDown, bool]:
         try:
             from openai import OpenAI
 
-            client = OpenAI(api_key=api_key, base_url=base_url)
+            client = _CountingClient(OpenAI(api_key=api_key, base_url=base_url))
             md = MarkItDown(
                 enable_plugins=True,
                 llm_client=client,
@@ -180,6 +215,7 @@ async def convert(file: UploadFile = File(...)) -> JSONResponse:
         mimetype=file.content_type,
     )
 
+    _ai_calls.set(0)  # reset the per-request vision-call counter
     try:
         result = converter.convert_stream(io.BytesIO(data), stream_info=stream_info)
     except UnsupportedFormatException:
@@ -193,12 +229,17 @@ async def convert(file: UploadFile = File(...)) -> JSONResponse:
     except Exception as exc:  # noqa: BLE001 - surface a clean error to the client
         raise HTTPException(status_code=500, detail=f"Error inesperado: {exc}")
 
+    ai_calls = _ai_calls.get()
     return JSONResponse(
         {
             "filename": filename,
             "title": result.title,
             "markdown": result.markdown,
             "characters": len(result.markdown),
+            # How it was converted — reported honestly from actual LLM calls.
+            "ocr_available": OCR_ENABLED,
+            "used_ai": ai_calls > 0,
+            "ai_calls": ai_calls,
         }
     )
 

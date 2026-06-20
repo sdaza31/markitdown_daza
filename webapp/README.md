@@ -94,6 +94,13 @@ según tu proveedor). Funciona con cualquier endpoint **compatible con OpenAI**
 
 Comprueba si está activo en `GET /api/health` → `{"status":"ok","ocr":true}`.
 
+La interfaz muestra el estado en tiempo real durante la conversión (fases:
+detección, extracción, análisis con IA…) y, al terminar, un distintivo honesto
+de **cómo** se convirtió: `🧠 OCR con IA · N llamadas de visión` cuando se llamó
+al LLM, o `⚡ Local · sin IA` cuando no hizo falta. El número de llamadas se mide
+de las invocaciones reales al modelo (`used_ai` / `ai_calls` en la respuesta de
+`/api/convert`), no se estima.
+
 > ⚠️ **Coste:** cada imagen / página escaneada genera una llamada de visión al
 > LLM, que tiene coste por tokens. Los PDFs con texto normal no llaman al LLM.
 

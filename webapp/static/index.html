@@ -208,6 +208,40 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ---- Status line (live conversion stages) ---- */
+  .statusline {
+    margin-top: 14px;
+    min-height: 18px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12.5px; color: var(--muted);
+    animation: fadein .3s ease;
+  }
+  .statusline.hide { display: none; }
+  .statusline .spinner {
+    border-color: rgba(201,247,60,0.2);
+    border-top-color: var(--accent);
+  }
+  @keyframes fadein { from{opacity:0} to{opacity:1} }
+
+  /* ---- OCR capability tag (header) ---- */
+  .ocrtag {
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 100px;
+    border: 1px solid var(--border); color: var(--faint);
+    margin-left: 4px; white-space: nowrap;
+  }
+  .ocrtag.on { color: var(--accent-dim); border-color: rgba(155,191,46,0.5); }
+
+  /* ---- Engine badge (result: AI vs local) ---- */
+  .badge {
+    font-size: 11px; font-weight: 500;
+    padding: 3px 10px; border-radius: 100px;
+    border: 1px solid var(--border);
+    margin-left: 8px; vertical-align: middle; white-space: nowrap;
+  }
+  .badge.ai { color: #10130a; background: var(--accent); border-color: var(--accent); }
+  .badge.local { color: var(--muted); background: var(--panel-2); }
+
   /* ---- Error ---- */
   .error {
     display: none;
@@ -296,7 +330,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand"><span class="dot"></span> MarkItDown · Powered by Python</div>
+    <div class="brand"><span class="dot"></span> MarkItDown · Powered by Python <span id="ocrBadge" class="ocrtag"></span></div>
     <h1>Cualquier archivo,<br /><em>convertido</em> a Markdown.</h1>
     <p class="subtitle">Sube un documento y obtén Markdown limpio listo para LLMs y pipelines de texto. PDF, Office, imágenes con OCR, audio, HTML y mucho más — procesado localmente en tu servidor.</p>
   </header>
@@ -335,6 +369,8 @@
     </button>
   </div>
 
+  <div class="statusline hide" id="statusline"></div>
+
   <div class="error" id="error"></div>
 
   <!-- Result -->
@@ -342,6 +378,7 @@
     <div class="rhead">
       <div class="meta">
         <b id="rtitle">Resultado</b> · <span id="rchars">0</span> caracteres
+        <span id="engineBadge" class="badge" style="display:none"></span>
       </div>
       <div class="rtools">
         <div class="toggle">
@@ -371,7 +408,48 @@
   const convertBtn = $('convertBtn'), btnLabel = $('btnLabel');
   const errorBox = $('error'), result = $('result');
   const raw = $('raw'), preview = $('preview');
+  const statusline = $('statusline');
   let currentFile = null, markdown = '';
+  let ocrEnabled = false;
+
+  // Ask the server whether LLM-vision OCR is available, and reflect it.
+  fetch('/api/health').then(r => r.json()).then(d => {
+    ocrEnabled = !!d.ocr;
+    const t = $('ocrBadge');
+    t.textContent = 'OCR IA: ' + (ocrEnabled ? 'activado' : 'desactivado');
+    t.classList.toggle('on', ocrEnabled);
+  }).catch(() => {});
+
+  // Extensions whose conversion may invoke the vision LLM when OCR is enabled.
+  const OCR_EXTS = ['pdf','docx','pptx','xlsx','png','jpg','jpeg','gif','webp','bmp','tif','tiff'];
+
+  // Live stage indicator. We don't get real-time progress from the server, so
+  // these reflect the actual pipeline phases (whether the AI step appears
+  // depends on file type + server capability). The definitive "did it use AI"
+  // comes from the result badge below, driven by real LLM call counts.
+  let stageTimer = null;
+  function startStages(file) {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const mayUseAI = ocrEnabled && OCR_EXTS.includes(ext);
+    const stages = ['Subiendo archivo…', 'Detectando tipo de archivo…', 'Extrayendo contenido…'];
+    if (mayUseAI) stages.push('Analizando imágenes con IA…');
+    stages.push('Generando Markdown…');
+    let i = 0;
+    const render = () => {
+      statusline.innerHTML = '<span class="spinner"></span><span>' + stages[i] + '</span>';
+    };
+    statusline.classList.remove('hide');
+    render();
+    stageTimer = setInterval(() => {
+      if (i < stages.length - 1) { i++; render(); }
+      else { clearInterval(stageTimer); stageTimer = null; }
+    }, 1100);
+  }
+  function stopStages() {
+    if (stageTimer) { clearInterval(stageTimer); stageTimer = null; }
+    statusline.classList.add('hide');
+    statusline.innerHTML = '';
+  }
 
   const fmtSize = (b) => b < 1024 ? b + ' B'
     : b < 1048576 ? (b/1024).toFixed(1) + ' KB'
@@ -408,6 +486,7 @@
     errorBox.classList.remove('show');
     convertBtn.disabled = true;
     btnLabel.innerHTML = '<span class="spinner"></span> Convirtiendo…';
+    startStages(currentFile);
 
     const fd = new FormData();
     fd.append('file', currentFile);
@@ -420,6 +499,19 @@
       $('rtitle').textContent = data.title || currentFile.name;
       $('rchars').textContent = (data.characters || 0).toLocaleString('es');
       preview.innerHTML = renderMarkdown(markdown);
+
+      // Honest "how it was converted" badge, from real LLM call counts.
+      const eb = $('engineBadge');
+      if (data.used_ai) {
+        eb.className = 'badge ai';
+        const n = data.ai_calls || 0;
+        eb.textContent = `🧠 OCR con IA · ${n} ${n === 1 ? 'llamada' : 'llamadas'} de visión`;
+      } else {
+        eb.className = 'badge local';
+        eb.textContent = data.ocr_available ? '⚡ Local · sin IA necesaria' : '⚡ Procesado local';
+      }
+      eb.style.display = 'inline-block';
+
       result.classList.add('show');
       showTab('raw');
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -427,6 +519,7 @@
       errorBox.textContent = '⚠ ' + err.message;
       errorBox.classList.add('show');
     } finally {
+      stopStages();
       convertBtn.disabled = false;
       btnLabel.textContent = 'Convertir a Markdown';
     }
