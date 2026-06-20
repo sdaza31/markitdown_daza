@@ -7,16 +7,18 @@ Serves a single-page dark-mode UI at "/" and a JSON conversion endpoint at
 
 from __future__ import annotations
 
+import base64
 import ipaddress
 import io
 import os
+import secrets
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from markitdown import MarkItDown, StreamInfo
@@ -32,6 +34,7 @@ MAX_UPLOAD_MB = int(os.environ.get("MARKITDOWN_MAX_UPLOAD_MB", "50"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 STATIC_DIR = Path(__file__).parent / "static"
+INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
 # CORS allowlist for cross-origin browser access. Empty keeps production at
 # same-origin only, while localhost/127.0.0.1 origins are reflected in local
@@ -57,6 +60,7 @@ for _origin in _CORS_ALLOWED_ORIGINS:
 
 _CORS_ALLOW_METHODS = "GET, POST, OPTIONS"
 _CORS_MAX_AGE_SECONDS = "600"
+_PERMISSIONS_POLICY = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()"
 
 # --- API docs exposure -----------------------------------------------------
 # The interactive API docs (Swagger) are DISABLED by default for security —
@@ -116,6 +120,36 @@ def _client_ip(request: Request) -> str:
     if xreal:
         return xreal
     return request.client.host if request.client else ""
+
+
+def _request_is_secure(request: Request) -> bool:
+    x_forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    if x_forwarded_proto:
+        proto = x_forwarded_proto.split(",", 1)[0].strip().lower()
+        return proto == "https"
+    return request.url.scheme == "https"
+
+
+def _build_csp(nonce: str) -> str:
+    directives = {
+        "default-src": ["'self'"],
+        "base-uri": ["'self'"],
+        "connect-src": ["'self'"],
+        "font-src": ["'self'", "https://fonts.gstatic.com"],
+        "form-action": ["'self'"],
+        "frame-ancestors": ["'none'"],
+        "img-src": ["'self'", "blob:", "data:"],
+        "object-src": ["'none'"],
+        "script-src": ["'self'", f"'nonce-{nonce}'"],
+        "style-src": ["'self'", f"'nonce-{nonce}'", "https://fonts.googleapis.com"],
+    }
+    return "; ".join(
+        f"{directive} {' '.join(values)}" for directive, values in directives.items()
+    )
+
+
+def _build_csp_nonce() -> str:
+    return base64.b64encode(secrets.token_bytes(16)).decode("ascii")
 
 
 def _is_loopback_host(hostname: str | None) -> bool:
@@ -178,6 +212,24 @@ def _append_vary(response: Response, value: str) -> None:
         response.headers["Vary"] = ", ".join(sorted(values))
 
 
+def _apply_security_headers(request: Request, response: Response) -> None:
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = _PERMISSIONS_POLICY
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+
+    csp = getattr(request.state, "csp", None)
+    if csp:
+        response.headers["Content-Security-Policy"] = csp
+
+    if _request_is_secure(request):
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+
+
 def _apply_cors_headers(
     response: Response, origin: str, request_headers: str | None = None
 ) -> None:
@@ -232,6 +284,13 @@ async def cors_policy(request: Request, call_next):
     response = await call_next(request)
     if cors_origin:
         _apply_cors_headers(response, cors_origin)
+    return response
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    _apply_security_headers(request, response)
     return response
 
 
@@ -376,8 +435,10 @@ async def convert(file: UploadFile = File(...)) -> JSONResponse:
 
 
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+def index(request: Request) -> HTMLResponse:
+    nonce = _build_csp_nonce()
+    request.state.csp = _build_csp(nonce)
+    return HTMLResponse(INDEX_HTML.replace("__CSP_NONCE__", nonce))
 
 
 # Serve any other static assets (favicon, etc.) from /static.

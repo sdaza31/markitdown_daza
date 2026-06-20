@@ -97,6 +97,17 @@ apuntando al contenedor viejo → 502 Bad Gateway).
   deja leer a JavaScript; no bloquea clientes como `curl`, scripts o accesos
   directos al backend.
 
+- **Security headers activos:** la app añade `Content-Security-Policy`,
+  `Permissions-Policy`, `Cross-Origin-Opener-Policy`,
+  `Cross-Origin-Resource-Policy`, `X-Content-Type-Options`,
+  `X-Frame-Options` y `Referrer-Policy` en las respuestas. Además, emite
+  `Strict-Transport-Security` cuando la petición llega por HTTPS (o con
+  `X-Forwarded-Proto: https` detrás de Traefik/Dokploy).
+- **CSP ajustada al frontend real:** el HTML usa nonces para su `<style>` y su
+  `<script>` inline, permite fuentes de Google (`fonts.googleapis.com`,
+  `fonts.gstatic.com`) y deja `connect-src 'self'` para que la UI solo hable
+  con su propio backend.
+
 ### Cómo añadir dominios al CORS
 
 Ejemplos:

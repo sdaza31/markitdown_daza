@@ -4,10 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MarkItDown — Convierte cualquier archivo a Markdown</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="icon" href="data:," />
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet" />
-<style>
+<style nonce="__CSP_NONCE__">
   :root {
     --bg: #0a0b0d;
     --bg-soft: #101216;
@@ -239,6 +238,7 @@
     border: 1px solid var(--border);
     margin-left: 8px; vertical-align: middle; white-space: nowrap;
   }
+  .badge.hidden { display: none; }
   .badge.ai { color: #10130a; background: var(--accent); border-color: var(--accent); }
   .badge.local { color: var(--muted); background: var(--panel-2); }
 
@@ -316,6 +316,7 @@
   .preview th { background: var(--panel-2); }
   .preview blockquote { border-left: 3px solid var(--accent-dim); padding-left: 14px; color: var(--muted); margin: .8em 0; }
   .preview img { max-width: 100%; border-radius: 8px; }
+  .preview-empty { color: var(--faint); }
 
   footer {
     margin-top: 70px; padding-top: 24px;
@@ -378,7 +379,7 @@
     <div class="rhead">
       <div class="meta">
         <b id="rtitle">Resultado</b> · <span id="rchars">0</span> caracteres
-        <span id="engineBadge" class="badge" style="display:none"></span>
+        <span id="engineBadge" class="badge hidden"></span>
       </div>
       <div class="rtools">
         <div class="toggle">
@@ -401,7 +402,7 @@
   </footer>
 </div>
 
-<script>
+<script nonce="__CSP_NONCE__">
   const $ = (id) => document.getElementById(id);
   const drop = $('drop'), input = $('fileInput');
   const filebar = $('filebar'), fname = $('fname'), fmeta = $('fmeta');
@@ -510,7 +511,7 @@
         eb.className = 'badge local';
         eb.textContent = data.ocr_available ? '⚡ Local · sin IA necesaria' : '⚡ Procesado local';
       }
-      eb.style.display = 'inline-block';
+      eb.classList.remove('hidden');
 
       result.classList.add('show');
       showTab('raw');
@@ -588,7 +589,7 @@
     }
     closeList(); closeTable();
     if (inCode) html += '</code></pre>';
-    return html || '<p style="color:var(--faint)">(sin contenido)</p>';
+    return html || '<p class="preview-empty">(sin contenido)</p>';
   }
 </script>
 </body>
