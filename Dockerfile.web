@@ -1,0 +1,44 @@
+# --------------------------------------------------------------------------
+# MarkItDown Web — FastAPI front-end image (for Dokploy / any Docker host).
+#
+# Build:  docker build -f Dockerfile.web -t markitdown-web .
+# Run:    docker run -p 8000:8000 markitdown-web
+# --------------------------------------------------------------------------
+FROM python:3.13-slim-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    EXIFTOOL_PATH=/usr/bin/exiftool \
+    FFMPEG_PATH=/usr/bin/ffmpeg \
+    PORT=8000
+
+# Runtime deps used by MarkItDown for audio transcription & image/EXIF metadata.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libmagic1 \
+    exiftool \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install the MarkItDown library (all optional converters) + web dependencies.
+COPY packages/markitdown /app/packages/markitdown
+COPY webapp/requirements.txt /app/webapp/requirements.txt
+RUN pip install --no-cache-dir /app/packages/markitdown[all] \
+    && pip install --no-cache-dir -r /app/webapp/requirements.txt
+
+# Copy the web application.
+COPY webapp /app/webapp
+
+# Run as an unprivileged user.
+RUN useradd --create-home --uid 10001 appuser
+USER appuser
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"
+
+# Bind to $PORT so platforms that inject one (Dokploy, etc.) just work.
+CMD ["sh", "-c", "uvicorn webapp.server:app --host 0.0.0.0 --port ${PORT:-8000}"]

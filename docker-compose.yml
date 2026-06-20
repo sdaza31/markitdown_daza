@@ -1,0 +1,30 @@
+# --------------------------------------------------------------------------
+# Dokploy / Docker Compose deployment for the MarkItDown web front-end.
+#
+# In Dokploy: create a "Compose" service pointing at this repo. Traefik will
+# route your domain to port 8000 automatically once you set the domain in the
+# Dokploy UI (Domains -> add, container port 8000).
+#
+# Locally:  docker compose up --build   ->   http://localhost:8000
+# --------------------------------------------------------------------------
+services:
+  markitdown-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: markitdown-web:latest
+    restart: unless-stopped
+    environment:
+      PORT: 8000
+      # Max upload size in MB.
+      MARKITDOWN_MAX_UPLOAD_MB: 50
+      # Set to 1 to enable third-party MarkItDown plugins.
+      MARKITDOWN_PLUGINS: 0
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

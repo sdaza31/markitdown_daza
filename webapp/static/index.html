@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MarkItDown — Convierte cualquier archivo a Markdown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0b0d;
+    --bg-soft: #101216;
+    --panel: #14161b;
+    --panel-2: #181b21;
+    --border: #24272f;
+    --border-bright: #34384300;
+    --text: #ecebe6;
+    --muted: #8b8d96;
+    --faint: #5a5d66;
+    --accent: #c9f73c;
+    --accent-dim: #9bbf2e;
+    --danger: #ff6b5e;
+    --radius: 14px;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --serif: 'Instrument Serif', Georgia, serif;
+    --read: 'Newsreader', Georgia, serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(circle at 12% -10%, rgba(201,247,60,0.07), transparent 40%),
+      radial-gradient(circle at 90% 110%, rgba(201,247,60,0.04), transparent 45%),
+      radial-gradient(rgba(255,255,255,0.022) 1px, transparent 1px);
+    background-size: auto, auto, 22px 22px;
+    min-height: 100vh;
+  }
+
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  /* ---- Header ---- */
+  header { margin-bottom: 44px; }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 26px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: clamp(44px, 8vw, 82px);
+    line-height: 0.96;
+    letter-spacing: -0.01em;
+  }
+  h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+  .subtitle {
+    margin-top: 18px;
+    max-width: 520px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ---- Dropzone ---- */
+  .drop {
+    position: relative;
+    margin-top: 40px;
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--panel), var(--bg-soft));
+    padding: 52px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s, transform .15s;
+  }
+  .drop:hover { border-color: var(--accent-dim); }
+  .drop.drag {
+    border-color: var(--accent);
+    background: linear-gradient(180deg, rgba(201,247,60,0.06), var(--bg-soft));
+    transform: scale(1.005);
+  }
+  .drop .icon {
+    width: 54px; height: 54px;
+    margin: 0 auto 18px;
+    display: grid; place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    color: var(--accent);
+    transition: transform .2s;
+  }
+  .drop:hover .icon { transform: translateY(-3px); }
+  .drop .big {
+    font-family: var(--serif);
+    font-size: 26px;
+    margin-bottom: 6px;
+  }
+  .drop .small { color: var(--faint); font-size: 12.5px; }
+  .drop input { display: none; }
+
+  .formats {
+    margin-top: 18px;
+    display: flex; flex-wrap: wrap; gap: 7px;
+    justify-content: center;
+  }
+  .chip {
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 4px 10px;
+    background: var(--panel-2);
+  }
+
+  /* ---- Selected file bar ---- */
+  .filebar {
+    display: none;
+    align-items: center;
+    gap: 14px;
+    margin-top: 22px;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+  }
+  .filebar.show { display: flex; }
+  .filebar .fi { flex: 1; min-width: 0; }
+  .filebar .fname {
+    font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .filebar .fmeta { color: var(--faint); font-size: 11.5px; margin-top: 2px; }
+  .filebar .fclear {
+    background: none; border: none; color: var(--faint);
+    cursor: pointer; font-family: var(--mono); font-size: 18px;
+    padding: 4px 8px; border-radius: 8px; transition: .15s;
+  }
+  .filebar .fclear:hover { color: var(--danger); background: var(--panel-2); }
+
+  /* ---- Convert button ---- */
+  .actions { margin-top: 20px; display: flex; gap: 12px; }
+  .btn {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border: none;
+    border-radius: 11px;
+    padding: 14px 22px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 9px;
+    transition: transform .12s, background .2s, opacity .2s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary {
+    background: var(--accent);
+    color: #10130a;
+    flex: 1;
+    justify-content: center;
+  }
+  .btn-primary:hover { background: #d8ff52; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-ghost {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { border-color: var(--accent-dim); color: var(--accent); }
+
+  .spinner {
+    width: 15px; height: 15px;
+    border: 2px solid rgba(16,19,10,0.35);
+    border-top-color: #10130a;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Error ---- */
+  .error {
+    display: none;
+    margin-top: 20px;
+    padding: 14px 18px;
+    border: 1px solid rgba(255,107,94,0.3);
+    background: rgba(255,107,94,0.07);
+    color: var(--danger);
+    border-radius: var(--radius);
+    font-size: 13px;
+  }
+  .error.show { display: block; }
+
+  /* ---- Result ---- */
+  .result { display: none; margin-top: 40px; }
+  .result.show { display: block; animation: rise .4s ease both; }
+  @keyframes rise { from{opacity:0; transform:translateY(14px)} to{opacity:1; transform:none} }
+
+  .rhead {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .rhead .meta { color: var(--muted); font-size: 12px; }
+  .rhead .meta b { color: var(--text); font-weight: 500; }
+  .rtools { display: flex; gap: 8px; }
+  .toggle {
+    display: flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden;
+  }
+  .toggle button {
+    background: var(--panel); border: none; color: var(--muted);
+    font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+    padding: 8px 14px; cursor: pointer; transition: .15s;
+  }
+  .toggle button.on { background: var(--accent); color: #10130a; }
+  .mini {
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 11.5px;
+    padding: 8px 14px; border-radius: 9px; cursor: pointer; transition: .15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .mini:hover { border-color: var(--accent-dim); color: var(--accent); }
+
+  .panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    overflow: hidden;
+  }
+  .panel pre {
+    margin: 0; padding: 24px;
+    max-height: 560px; overflow: auto;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.7;
+    color: #d6e9b0; white-space: pre-wrap; word-break: break-word;
+  }
+  .preview {
+    display: none;
+    padding: 30px 34px; max-height: 560px; overflow: auto;
+    font-family: var(--read); font-size: 16px; line-height: 1.7; color: var(--text);
+  }
+  .preview.show { display: block; }
+  .panel pre.hide { display: none; }
+  .preview h1,.preview h2,.preview h3 { font-family: var(--read); font-weight: 500; line-height:1.2; margin: 1.2em 0 .5em; }
+  .preview h1 { font-size: 1.8em; } .preview h2 { font-size: 1.4em; } .preview h3 { font-size: 1.15em; }
+  .preview p { margin: .7em 0; }
+  .preview a { color: var(--accent-dim); }
+  .preview code { font-family: var(--mono); font-size: .85em; background: var(--panel-2); padding: 2px 6px; border-radius: 5px; }
+  .preview pre { background: var(--bg-soft); padding: 16px; border-radius: 10px; overflow:auto; }
+  .preview ul,.preview ol { padding-left: 1.4em; margin: .6em 0; }
+  .preview table { border-collapse: collapse; width: 100%; margin: 1em 0; font-family: var(--mono); font-size: .8em; }
+  .preview th,.preview td { border: 1px solid var(--border); padding: 7px 11px; text-align: left; }
+  .preview th { background: var(--panel-2); }
+  .preview blockquote { border-left: 3px solid var(--accent-dim); padding-left: 14px; color: var(--muted); margin: .8em 0; }
+  .preview img { max-width: 100%; border-radius: 8px; }
+
+  footer {
+    margin-top: 70px; padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--faint); font-size: 11.5px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><span class="dot"></span> MarkItDown · Powered by Python</div>
+    <h1>Cualquier archivo,<br /><em>convertido</em> a Markdown.</h1>
+    <p class="subtitle">Sube un documento y obtén Markdown limpio listo para LLMs y pipelines de texto. PDF, Office, imágenes con OCR, audio, HTML y mucho más — procesado localmente en tu servidor.</p>
+  </header>
+
+  <!-- Dropzone -->
+  <label class="drop" id="drop">
+    <div class="icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 16V4m0 0L7 9m5-5l5 5"/><path d="M5 20h14"/>
+      </svg>
+    </div>
+    <div class="big">Arrastra tu archivo aquí</div>
+    <div class="small">o haz clic para buscar — máx. 50 MB</div>
+    <input type="file" id="fileInput" />
+  </label>
+
+  <div class="formats">
+    <span class="chip">PDF</span><span class="chip">DOCX</span><span class="chip">XLSX</span>
+    <span class="chip">PPTX</span><span class="chip">PNG / JPG · OCR</span><span class="chip">MP3 · WAV</span>
+    <span class="chip">HTML</span><span class="chip">CSV · JSON · XML</span><span class="chip">EPUB</span><span class="chip">ZIP</span>
+  </div>
+
+  <!-- Selected file -->
+  <div class="filebar" id="filebar">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+    <div class="fi">
+      <div class="fname" id="fname">—</div>
+      <div class="fmeta" id="fmeta"></div>
+    </div>
+    <button class="fclear" id="fclear" title="Quitar">×</button>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="convertBtn" disabled>
+      <span id="btnLabel">Convertir a Markdown</span>
+    </button>
+  </div>
+
+  <div class="error" id="error"></div>
+
+  <!-- Result -->
+  <section class="result" id="result">
+    <div class="rhead">
+      <div class="meta">
+        <b id="rtitle">Resultado</b> · <span id="rchars">0</span> caracteres
+      </div>
+      <div class="rtools">
+        <div class="toggle">
+          <button id="tabRaw" class="on">Markdown</button>
+          <button id="tabPrev">Vista previa</button>
+        </div>
+        <button class="mini" id="copyBtn">Copiar</button>
+        <button class="mini" id="dlBtn">Descargar .md</button>
+      </div>
+    </div>
+    <div class="panel">
+      <pre id="raw"></pre>
+      <div class="preview" id="preview"></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>MarkItDown Web · fork de microsoft/markitdown</span>
+    <a href="/api/docs">API docs →</a>
+  </footer>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const drop = $('drop'), input = $('fileInput');
+  const filebar = $('filebar'), fname = $('fname'), fmeta = $('fmeta');
+  const convertBtn = $('convertBtn'), btnLabel = $('btnLabel');
+  const errorBox = $('error'), result = $('result');
+  const raw = $('raw'), preview = $('preview');
+  let currentFile = null, markdown = '';
+
+  const fmtSize = (b) => b < 1024 ? b + ' B'
+    : b < 1048576 ? (b/1024).toFixed(1) + ' KB'
+    : (b/1048576).toFixed(2) + ' MB';
+
+  function setFile(file) {
+    currentFile = file;
+    if (!file) {
+      filebar.classList.remove('show');
+      convertBtn.disabled = true;
+      return;
+    }
+    fname.textContent = file.name;
+    fmeta.textContent = (file.type || 'tipo desconocido') + ' · ' + fmtSize(file.size);
+    filebar.classList.add('show');
+    convertBtn.disabled = false;
+    errorBox.classList.remove('show');
+  }
+
+  // Drag & drop
+  ['dragenter','dragover'].forEach(ev =>
+    drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev =>
+    drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+  drop.addEventListener('drop', e => {
+    if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', e => { if (e.target.files.length) setFile(e.target.files[0]); });
+  $('fclear').addEventListener('click', (e) => { e.preventDefault(); input.value=''; setFile(null); });
+
+  // Convert
+  convertBtn.addEventListener('click', async () => {
+    if (!currentFile) return;
+    errorBox.classList.remove('show');
+    convertBtn.disabled = true;
+    btnLabel.innerHTML = '<span class="spinner"></span> Convirtiendo…';
+
+    const fd = new FormData();
+    fd.append('file', currentFile);
+    try {
+      const res = await fetch('/api/convert', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Error en la conversión.');
+      markdown = data.markdown || '';
+      raw.textContent = markdown || '(sin contenido)';
+      $('rtitle').textContent = data.title || currentFile.name;
+      $('rchars').textContent = (data.characters || 0).toLocaleString('es');
+      preview.innerHTML = renderMarkdown(markdown);
+      result.classList.add('show');
+      showTab('raw');
+      result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      errorBox.textContent = '⚠ ' + err.message;
+      errorBox.classList.add('show');
+    } finally {
+      convertBtn.disabled = false;
+      btnLabel.textContent = 'Convertir a Markdown';
+    }
+  });
+
+  // Tabs
+  function showTab(which) {
+    const rawOn = which === 'raw';
+    $('tabRaw').classList.toggle('on', rawOn);
+    $('tabPrev').classList.toggle('on', !rawOn);
+    raw.classList.toggle('hide', !rawOn);
+    preview.classList.toggle('show', !rawOn);
+  }
+  $('tabRaw').addEventListener('click', () => showTab('raw'));
+  $('tabPrev').addEventListener('click', () => showTab('prev'));
+
+  // Copy & download
+  $('copyBtn').addEventListener('click', async () => {
+    await navigator.clipboard.writeText(markdown);
+    const b = $('copyBtn'); b.textContent = '✓ Copiado'; setTimeout(()=>b.textContent='Copiar', 1500);
+  });
+  $('dlBtn').addEventListener('click', () => {
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (currentFile?.name.replace(/\.[^.]+$/, '') || 'documento') + '.md';
+    a.click(); URL.revokeObjectURL(a.href);
+  });
+
+  // Minimal, safe markdown -> HTML renderer for the preview tab.
+  function renderMarkdown(md) {
+    const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const lines = md.split('\n');
+    let html = '', inCode = false, inList = false, inTable = false;
+    const inline = (t) => esc(t)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+    const closeTable = () => { if (inTable) { html += '</tbody></table>'; inTable = false; } };
+    for (let line of lines) {
+      if (line.trim().startsWith('```')) {
+        if (inCode) { html += '</code></pre>'; inCode = false; }
+        else { closeList(); closeTable(); html += '<pre><code>'; inCode = true; }
+        continue;
+      }
+      if (inCode) { html += esc(line) + '\n'; continue; }
+      if (/^\s*\|(.+)\|\s*$/.test(line)) {
+        const cells = line.trim().slice(1,-1).split('|').map(c=>c.trim());
+        if (/^[\s|:-]+$/.test(line)) continue; // separator row
+        if (!inTable) { closeList(); html += '<table><tbody>'; inTable = true; }
+        html += '<tr>' + cells.map(c=>'<td>'+inline(c)+'</td>').join('') + '</tr>';
+        continue;
+      } else closeTable();
+      const h = line.match(/^(#{1,6})\s+(.*)/);
+      if (h) { closeList(); html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; continue; }
+      if (/^\s*[-*+]\s+/.test(line)) {
+        if (!inList) { html += '<ul>'; inList = true; }
+        html += '<li>' + inline(line.replace(/^\s*[-*+]\s+/, '')) + '</li>';
+        continue;
+      } else closeList();
+      if (/^\s*>\s?/.test(line)) { html += '<blockquote>' + inline(line.replace(/^\s*>\s?/, '')) + '</blockquote>'; continue; }
+      if (line.trim() === '') continue;
+      html += '<p>' + inline(line) + '</p>';
+    }
+    closeList(); closeTable();
+    if (inCode) html += '</code></pre>';
+    return html || '<p style="color:var(--faint)">(sin contenido)</p>';
+  }
+</script>
+</body>
+</html>
